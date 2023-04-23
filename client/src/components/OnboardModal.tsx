@@ -5,6 +5,7 @@ import styles from '../styles';
 import { CustomButton } from '.';
 import { useGlobalContext } from '../context';
 import { GetParams, SwitchNetwork } from '../utils/onboard.js';
+import React from 'react';
 
 const OnboardModal = () => {
     const [modalIsOpen, setIsOpen] = useState(false);

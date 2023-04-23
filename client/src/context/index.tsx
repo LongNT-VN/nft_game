@@ -1,9 +1,17 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Contract, ethers } from 'ethers';
 import Web3Modal from 'Web3Modal';
-import { ADDRESS, ABI } from '../contract';
-import { createEventListeners } from './createEventListeners';
+import { Contract, ethers } from 'ethers';
+import React, {
+    createContext,
+    useContext,
+    useEffect,
+    useRef,
+    useState,
+} from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ABI, ADDRESS } from '../contract';
+import { isEmptyObject } from '../utils/checkObjectEmpty';
+import { GetParams } from '../utils/onboard';
+import { createEventListeners } from './createEventListeners';
 
 const GlobalContext = createContext({
     walletAddress: '',
@@ -21,6 +29,28 @@ const GlobalContext = createContext({
     }) => {
         return;
     },
+    battleName: '',
+    setBattleName: (battleName: string) => {
+        return;
+    },
+    gameData: {} as {
+        players: never[];
+        pendingBattles: any;
+        activeBattle: any;
+    },
+    battleGround: 'bg-astral',
+    setBattleGround: (battleGround: string) => {
+        return;
+    },
+    errorMessage: {} as { reason: string },
+    setErrorMessage: ({ reason }: { reason: string }) => {
+        return;
+    },
+    player1Ref: {},
+    player2Ref: {},
+    updateCurrentWalletAddress: () => {
+        return;
+    },
 });
 export const GlobalContextProvider = ({ children }: { children: any }) => {
     const [walletAddress, setWalletAddress] = useState('');
@@ -33,6 +63,19 @@ export const GlobalContextProvider = ({ children }: { children: any }) => {
         type: 'info',
         message: '',
     });
+    const [battleName, setBattleName] = useState('');
+    const [gameData, setGameData] = useState({
+        players: [],
+        pendingBattles: [],
+        activeBattle: null,
+    });
+    const [updateGameData, setUpdateGameData] = useState(0);
+    const [battleGround, setBattleGround] = useState('');
+    const [step, setStep] = useState(1);
+    const [errorMessage, setErrorMessage] = useState({ reason: '' });
+    const player1Ref = useRef({});
+    const player2Ref = useRef({});
+
     const navigate = useNavigate();
     const updateCurrentWalletAddress = async () => {
         const accounts = await window?.ethereum?.request({
@@ -42,6 +85,22 @@ export const GlobalContextProvider = ({ children }: { children: any }) => {
             setWalletAddress(accounts[0]);
         }
     };
+    useEffect(() => {
+        const battleGroundFromLocalStorage =
+            localStorage.getItem('battleGround');
+        if (battleGroundFromLocalStorage)
+            setBattleGround(battleGroundFromLocalStorage);
+    }, []);
+
+    useEffect(() => {
+        const resetParams = async () => {
+            const currentStep = await GetParams();
+            setStep(currentStep.step);
+            window?.ethereum?.on('chainChanged', () => resetParams());
+            window?.ethereum?.on('accountsChanged', () => resetParams());
+        };
+    }, []);
+
     useEffect(() => {
         setSmartContractAndProvider();
     }, []);
@@ -70,16 +129,65 @@ export const GlobalContextProvider = ({ children }: { children: any }) => {
     }, [showAlert]);
 
     useEffect(() => {
-        if (!isEmptyObject(contract)) {
+        if (errorMessage) {
+            const parsedErrorMessage = errorMessage?.reason?.split(
+                'execution reverted: '
+            )[1];
+            if (parsedErrorMessage) {
+                setShowAlert({
+                    status: true,
+                    type: 'failure',
+                    message: parsedErrorMessage,
+                });
+            }
+        }
+    }, [errorMessage]);
+
+    useEffect(() => {
+        if (step !== -1 && !isEmptyObject(contract)) {
             createEventListeners({
                 navigate,
                 contract,
                 provider,
                 walletAddress,
                 setShowAlert,
+                setUpdateGameData,
+                player1Ref,
+                player2Ref,
             });
         }
-    }, [contract]);
+    }, [contract, step]);
+
+    // Set the game data to the state
+
+    useEffect(() => {
+        const fetchGameData = async () => {
+            const fetchedBattles = await contract.getAllBattles();
+            const pendingBattles = fetchedBattles.filter(
+                (battle) => battle.battleStatus === 0
+            );
+            let activeBattle = null;
+            fetchedBattles.forEach((battle) => {
+                if (
+                    battle.players.find(
+                        (player) =>
+                            player.toLowerCase() ===
+                            walletAddress.toLocaleLowerCase()
+                    )
+                ) {
+                    if (battle.winner.startsWith('0x00')) {
+                        activeBattle = battle;
+                    }
+                }
+            });
+            setGameData({
+                players: [],
+                pendingBattles: pendingBattles.slice(1),
+                activeBattle,
+            });
+        };
+        if (contract) fetchGameData();
+    }, [contract, updateGameData]);
 
     return (
         <GlobalContext.Provider
@@ -89,15 +197,21 @@ export const GlobalContextProvider = ({ children }: { children: any }) => {
                 contract,
                 showAlert,
                 setShowAlert,
+                battleName,
+                setBattleName,
+                gameData,
+                battleGround,
+                setBattleGround,
+                errorMessage,
+                setErrorMessage,
+                player1Ref,
+                player2Ref,
+                updateCurrentWalletAddress,
             }}
         >
             {children}
         </GlobalContext.Provider>
     );
 };
-const isEmptyObject = (obj: Object) =>
-    Object.getPrototypeOf(obj) === Object.prototype &&
-    Object.getOwnPropertyNames(obj).length === 0 &&
-    Object.getOwnPropertySymbols(obj).length === 0;
 
 export const useGlobalContext = () => useContext(GlobalContext);

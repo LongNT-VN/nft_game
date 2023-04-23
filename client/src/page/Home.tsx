@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { CustomButton } from '../components';
 import CustomInput from '../components/CustomInput';
 import PageHOC from '../components/PageHOC';
-import { GlobalContextProvider, useGlobalContext } from '../context';
+import { useGlobalContext } from '../context';
+import { isEmptyObject } from '../utils/checkObjectEmpty';
 
 const Home = () => {
-    const { contract, walletAddress, showAlert, setShowAlert } =
+    const { contract, walletAddress, setShowAlert, gameData, setErrorMessage } =
         useGlobalContext();
     const [playerName, setPlayerName] = useState('');
     const handleClick = async () => {
@@ -14,7 +15,7 @@ const Home = () => {
             const playerExists = await contract.isPlayer(walletAddress);
             if (!playerExists) {
                 await contract.registerPlayer(playerName, playerName, {
-                    gasLimit: 500000,
+                    gasLimit: 20000,
                 });
                 setShowAlert({
                     status: true,
@@ -23,21 +24,26 @@ const Home = () => {
                 });
             }
         } catch (error) {
-            setShowAlert({
-                status: true,
-                type: 'info',
-                message: 'Error',
-            });
+            setErrorMessage(error);
         }
     };
     const navigate = useNavigate();
     useEffect(() => {
         const checkForPlayerToken = async () => {
             const playerExists = await contract.isPlayer(walletAddress);
-            const playerTokenExists = await contract.isPlayerToken(walletAddress);
-            if(playerExists && playerTokenExists) navigate('/create-battle')
+            const playerTokenExists = await contract.isPlayerToken(
+                walletAddress
+            );
+            if (playerExists && playerTokenExists) navigate('/create-battle');
         };
+        if (!isEmptyObject(contract)) checkForPlayerToken();
     }, [contract]);
+
+    useEffect(() => {
+        if (gameData && gameData.activeBattle) {
+            navigate(`/battle/${gameData.activeBattle.name}`);
+        }
+    }, [gameData]);
 
     return (
         <div className="flex flex-col">
